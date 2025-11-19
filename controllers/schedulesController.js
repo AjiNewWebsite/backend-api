@@ -2,6 +2,8 @@ import XLSX from "xlsx";
 import fs from "fs";
 import path from "path";
 import Schedule from "../models/Schedule.js";
+import { formatDate } from "../util/formatDate.js";
+import { formatTime } from "../util/formatTime.js";
 
 export const createSchedule = async (req, res) => {
   try {
@@ -63,34 +65,6 @@ export const uploadExcel = async (req, res) => {
 
     const schedules = [];
 
-    const formatTime = (val) => {
-      if (typeof val === "number") {
-        const totalSec = Math.round(val * 24 * 3600);
-        const h = String(Math.floor(totalSec / 3600)).padStart(2, "0");
-        const m = String(Math.floor((totalSec % 3600) / 60)).padStart(2, "0");
-        const s = String(totalSec % 60).padStart(2, "0");
-        return `${h}:${m}:${s}`;
-      }
-      return val.toString().padStart(8, "0");
-    };
-
-    const formatDate = (value) => {
-      if (typeof value === "number") {
-        const d = XLSX.SSF.parse_date_code(value);
-        if (!d) throw new Error("Tanggal tidak valid");
-        return `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(
-          2,
-          "0"
-        )}`;
-      }
-
-      const date = new Date(value);
-      if (isNaN(date.getTime()))
-        throw new Error("Format tanggal tidak dikenali");
-
-      return date.toISOString().slice(0, 10);
-    };
-
     for (const r of rows) {
       try {
         const row = {};
@@ -110,16 +84,7 @@ export const uploadExcel = async (req, res) => {
           "Selesai",
         ];
 
-        let valid = true;
-        for (const col of required) {
-          if (!row[col]) valid = false;
-        }
-        if (!valid) continue;
-
-        const dateValue = formatDate(row["Tanggal"]);
-
-        const timeStart = formatTime(row["Mulai"]);
-        const timeEnd = formatTime(row["Selesai"]);
+        if (!required.every((col) => row[col])) continue;
 
         schedules.push({
           class_code: row["Kode Kelas"],
@@ -127,10 +92,10 @@ export const uploadExcel = async (req, res) => {
           subject_code: row["Kode Mapel"],
           teacher_nik: row["NIK Guru"].toString(),
           teacher_name: row["Nama Guru"],
-          date: dateValue,
+          date: formatDate(row["Tanggal"]),
           jam_ke: Number(row["Jam Ke"]),
-          time_start: timeStart,
-          time_end: timeEnd,
+          time_start: formatTime(row["Mulai"]),
+          time_end: formatTime(row["Selesai"]),
         });
       } catch (rowErr) {
         console.error("ROW ERROR:", r, rowErr.message);
@@ -140,7 +105,7 @@ export const uploadExcel = async (req, res) => {
 
     fs.unlinkSync(req.file.path);
 
-    const created = await Schedule.bulkCreate(schedules);
+    const created = await Schedule.insertMany(schedules);
 
     return res.json({
       message: `Upload sukses, ${created.length} jadwal ditambahkan`,
